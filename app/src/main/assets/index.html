@@ -1,16 +1,26 @@
 <!doctype html>
 <html>
 <head>
+
     <meta charset="utf-8">
 
-    <meta name="viewport"
-          content="width=device-width,initial-scale=1,viewport-fit=cover">
+    <meta
+        name="viewport"
+        content="width=device-width,initial-scale=1,viewport-fit=cover"
+    >
 
-    <meta name="theme-color" content="#14532d">
+    <meta
+        name="theme-color"
+        content="#14532d"
+    >
 
     <title>Offline Contact & Payment</title>
 
-    <link rel="stylesheet" href="style.css">
+    <link
+        rel="stylesheet"
+        href="style.css"
+    >
+
 </head>
 
 <body>
@@ -18,11 +28,19 @@
 <div id="app">
 
     <header>
+
         <h1>Contact & Payment</h1>
 
         <div class="headBtns">
-            <button id="importBtn">IMPORT EXCEL</button>
-            <button id="exportBtn">EXPORT EXCEL</button>
+
+            <button id="importBtn">
+                IMPORT EXCEL
+            </button>
+
+            <button id="exportBtn">
+                EXPORT EXCEL
+            </button>
+
         </div>
 
         <input
@@ -31,24 +49,47 @@
             accept=".xlsx"
             hidden
         >
+
     </header>
+
+
+    <!-- SEARCH -->
 
     <section class="toolbar">
 
         <input
             id="search"
+            type="search"
+            inputmode="search"
+            autocomplete="off"
             placeholder="Search name, contact or remarks"
         >
 
-        <select id="yearFilter">
-            <option value="all">All contacts</option>
-        </select>
+        <button
+            id="searchBtn"
+            type="button"
+            disabled
+        >
+            SEARCH
+        </button>
 
     </section>
 
-    <section id="stats" class="stats"></section>
+
+    <!-- DASHBOARD -->
+
+    <section
+        id="stats"
+        class="stats">
+    </section>
+
+
+    <!-- SUMMARY -->
 
     <div id="summary"></div>
+
+
+    <!-- MESSAGE -->
 
     <div
         id="message"
@@ -56,21 +97,36 @@
         role="status">
     </div>
 
+
+    <!-- CONTACT LIST -->
+
     <main id="list"></main>
+
+
+    <!-- GO TO TOP -->
 
     <button
         id="topBtn"
         class="topBtn"
         aria-label="Go to top"
-        onclick="goTop()">
+        onclick="goTop()"
+    >
         ↑
     </button>
 
 </div>
 
+
+<!-- CLEAR DATA -->
+
 <footer>
-    <button id="clearBtn">Clear Data</button>
+
+    <button id="clearBtn">
+        Clear Data
+    </button>
+
 </footer>
+
 
 <script src="app.js"></script>
 
