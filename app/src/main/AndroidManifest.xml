@@ -1,18 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <uses-permission android:name="android.permission.CALL_PHONE" />
-
     <application
         android:theme="@style/AppTheme"
-        android:label="Contact & Payment"
-        android:allowBackup="true"
+        android:label="Contact Payment"
+        android:allowBackup="false"
         android:supportsRtl="true">
 
         <activity
             android:name=".MainActivity"
-            android:screenOrientation="portrait"
-            android:exported="true">
+            android:exported="true"
+            android:screenOrientation="portrait">
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
