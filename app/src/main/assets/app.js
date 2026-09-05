@@ -180,6 +180,62 @@ function saveRemark(i){
 }
 
 
+
+/* =========================
+   EDIT / DELETE REMARKS
+   ========================= */
+
+function editRemark(i,n){
+
+  const c=contacts[i];
+
+  if(!c)return;
+
+  if(!Array.isArray(c.remarksHistory))return;
+
+  const oldText=c.remarksHistory[n];
+
+  if(oldText===undefined)return;
+
+  const newText=prompt('Edit remark:',oldText);
+
+  if(newText===null)return;
+
+  const text=newText.trim();
+
+  if(!text)return;
+
+  c.remarksHistory[n]=text;
+
+  save();
+
+  render();
+
+}
+
+
+function deleteRemark(i,n){
+
+  const c=contacts[i];
+
+  if(!c)return;
+
+  if(!Array.isArray(c.remarksHistory))return;
+
+  const oldText=c.remarksHistory[n];
+
+  if(oldText===undefined)return;
+
+  if(!confirm('Delete this remark?'))return;
+
+  c.remarksHistory.splice(n,1);
+
+  save();
+
+  render();
+
+}
+
 /* =========================
    DASHBOARD
    ========================= */
@@ -532,12 +588,29 @@ function render(){
 
               <div class="savedRemarkItem">
 
-                <span>
-
-                  <b>${n+1}.</b>
-                  ${esc(r)}
-
+                <span class="savedRemarkText">
+                  <b>${n+1}.</b> ${esc(r)}
                 </span>
+
+                <div class="remarkActions">
+
+                  <button
+                    class="remarkEditBtn"
+                    onclick="editRemark(${i},${n})"
+                    type="button"
+                  >
+                    Edit
+                  </button>
+
+                  <button
+                    class="remarkDeleteBtn"
+                    onclick="deleteRemark(${i},${n})"
+                    type="button"
+                  >
+                    Delete
+                  </button>
+
+                </div>
 
               </div>
 
