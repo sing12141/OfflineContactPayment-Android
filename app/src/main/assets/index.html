@@ -1,5 +1,6 @@
 <!doctype html>
 <html>
+
 <head>
 
     <meta charset="utf-8">
@@ -23,9 +24,13 @@
 
 </head>
 
+
 <body>
 
 <div id="app">
+
+
+    <!-- HEADER -->
 
     <header>
 
@@ -43,6 +48,9 @@
 
         </div>
 
+
+        <!-- Hidden Excel file selector -->
+
         <input
             id="file"
             type="file"
@@ -51,6 +59,7 @@
         >
 
     </header>
+
 
 
     <!-- SEARCH -->
@@ -76,12 +85,15 @@
     </section>
 
 
+
     <!-- DASHBOARD -->
 
     <section
         id="stats"
-        class="stats">
+        class="stats"
+    >
     </section>
+
 
 
     <!-- SUMMARY -->
@@ -89,18 +101,22 @@
     <div id="summary"></div>
 
 
+
     <!-- MESSAGE -->
 
     <div
         id="message"
         class="message"
-        role="status">
+        role="status"
+    >
     </div>
+
 
 
     <!-- CONTACT LIST -->
 
     <main id="list"></main>
+
 
 
     <!-- GO TO TOP -->
@@ -114,7 +130,9 @@
         ↑
     </button>
 
+
 </div>
+
 
 
 <!-- CLEAR DATA -->
@@ -128,7 +146,19 @@
 </footer>
 
 
+
+<!--
+    IMPORTANT:
+    SheetJS must load BEFORE app.js.
+    xlsx.full.min.js is stored locally in the APK,
+    so Excel import/export works completely offline.
+-->
+
+<script src="xlsx.full.min.js"></script>
+
 <script src="app.js"></script>
 
+
 </body>
+
 </html>
