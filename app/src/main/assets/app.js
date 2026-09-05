@@ -100,10 +100,9 @@ function esc(s){
 
 function isYear(h){
 
-  const s=String(h).trim();
-
-  return /^(19|20)\d{2}$/.test(s) ||
-         /^(19|20)\d{2}[-–](19|20)?\d{2}$/.test(s);
+  return /^(19|20)\d{2}$/.test(
+    String(h).trim()
+  );
 
 }
 
@@ -181,46 +180,214 @@ function saveRemark(i){
 }
 
 
-
 /* =========================
    EDIT / DELETE REMARKS
    ========================= */
 
-function editRemark(i,n){
+function closeRemarkModal(){
+
+  const m=$('remarkModal');
+
+  if(m){
+    m.remove();
+  }
+
+}
+
+function showRemarkModal(type,i,n){
 
   const c=contacts[i];
+
   if(!c)return;
+
   if(!Array.isArray(c.remarksHistory))return;
 
   const oldText=c.remarksHistory[n];
+
   if(oldText===undefined)return;
 
-  const newText=prompt('Edit remark:',oldText);
-  if(newText===null)return;
+  closeRemarkModal();
 
-  const text=newText.trim();
+  const modal=document.createElement('div');
+
+  modal.id='remarkModal';
+  modal.className='remarkModal';
+
+  if(type==='edit'){
+
+    modal.innerHTML=`
+
+      <div class="remarkModalBox">
+
+        <div class="remarkModalTitle">
+          Edit Remark
+        </div>
+
+        <textarea
+          id="editRemarkText"
+          class="remarkModalInput"
+        >${esc(oldText)}</textarea>
+
+        <div class="remarkModalActions">
+
+          <button
+            type="button"
+            class="remarkCancelBtn"
+            onclick="closeRemarkModal()"
+          >
+            Cancel
+          </button>
+
+          <button
+            type="button"
+            class="remarkSaveBtn"
+            onclick="saveEditedRemark(${i},${n})"
+          >
+            Save
+          </button>
+
+        </div>
+
+      </div>
+
+    `;
+
+  }else{
+
+    modal.innerHTML=`
+
+      <div class="remarkModalBox">
+
+        <div class="remarkModalTitle">
+          Delete Remark
+        </div>
+
+        <div class="remarkDeleteText">
+          Delete this remark?
+        </div>
+
+        <div class="remarkDeletePreview">
+          ${esc(oldText)}
+        </div>
+
+        <div class="remarkModalActions">
+
+          <button
+            type="button"
+            class="remarkCancelBtn"
+            onclick="closeRemarkModal()"
+          >
+            Cancel
+          </button>
+
+          <button
+            type="button"
+            class="remarkDeleteConfirmBtn"
+            onclick="confirmDeleteRemark(${i},${n})"
+          >
+            Delete
+          </button>
+
+        </div>
+
+      </div>
+
+    `;
+
+  }
+
+  document.body.appendChild(modal);
+
+  if(type==='edit'){
+
+    const input=$('editRemarkText');
+
+    if(input){
+
+      input.focus();
+
+      input.setSelectionRange(
+        input.value.length,
+        input.value.length
+      );
+
+    }
+
+  }
+
+}
+
+function editRemark(i,n){
+
+  showRemarkModal(
+    'edit',
+    i,
+    n
+  );
+
+}
+
+function saveEditedRemark(i,n){
+
+  const c=contacts[i];
+
+  if(!c)return;
+
+  if(!Array.isArray(c.remarksHistory))return;
+
+  const input=$('editRemarkText');
+
+  if(!input)return;
+
+  const text=input.value.trim();
+
   if(!text)return;
 
+  if(c.remarksHistory[n]===undefined)return;
+
   c.remarksHistory[n]=text;
+
   save();
+
+  closeRemarkModal();
+
   render();
+
 }
 
 function deleteRemark(i,n){
 
+  showRemarkModal(
+    'delete',
+    i,
+    n
+  );
+
+}
+
+function confirmDeleteRemark(i,n){
+
   const c=contacts[i];
+
   if(!c)return;
+
   if(!Array.isArray(c.remarksHistory))return;
 
-  const oldText=c.remarksHistory[n];
-  if(oldText===undefined)return;
+  if(c.remarksHistory[n]===undefined)return;
 
-  if(!confirm('Delete this remark?'))return;
+  c.remarksHistory.splice(
+    n,
+    1
+  );
 
-  c.remarksHistory.splice(n,1);
   save();
+
+  closeRemarkModal();
+
   render();
+
 }
+
 
 /* =========================
    DASHBOARD
