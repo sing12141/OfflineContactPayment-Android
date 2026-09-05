@@ -1,2418 +1,1074 @@
-const KEY='offline_contact_payment_v2';
+const KEY = 'offline_contact_payment_v2';
 
-let contacts=[];
-let headers=[];
-let years=[];
-let searchQuery='';
-let activeView='total';
+let contacts = [];
+let headers = [];
+let years = [];
+let searchQuery = '';
+let activeView = 'all';
 
-const $=id=>document.getElementById(id);
+const fileInput = document.getElementById('file');
+const importBtn = document.getElementById('importBtn');
+const exportBtn = document.getElementById('exportBtn');
+const searchInput = document.getElementById('search');
+const searchBtn = document.getElementById('searchBtn');
+const list = document.getElementById('list');
+const summary = document.getElementById('summary');
+const stats = document.getElementById('stats');
+const message = document.getElementById('message');
+const clearBtn = document.getElementById('clearBtn');
+const topBtn = document.getElementById('topBtn');
 
-
-/* =========================
-   SAVE / LOAD
-   ========================= */
-
-function save(){
-  localStorage.setItem(
-    KEY,
-    JSON.stringify({
-      contacts,
-      headers,
-      years
-    })
-  );
+function saveData() {
+    localStorage.setItem(KEY, JSON.stringify({
+        contacts,
+        headers,
+        years
+    }));
 }
 
-function load(){
+function loadData() {
+    try {
+        const raw = localStorage.getItem(KEY);
 
-  try{
+        if (!raw) {
+            contacts = [];
+            headers = [];
+            years = [];
+            return;
+        }
 
-    const x=
-      JSON.parse(
-        localStorage.getItem(KEY)||'{}'
-      );
+        const data = JSON.parse(raw);
 
-    contacts=x.contacts||[];
+        contacts = Array.isArray(data.contacts) ? data.contacts : [];
+        headers = Array.isArray(data.headers) ? data.headers : [];
+        years = Array.isArray(data.years) ? data.years : [];
 
-    contacts.forEach(c=>{
+        normalizeData();
+    } catch (e) {
+        contacts = [];
+        headers = [];
+        years = [];
+    }
+}
 
-      if(!Array.isArray(c.remarksHistory)){
+function normalizeData() {
+    contacts.forEach(c => {
+        if (!Array.isArray(c.remarks)) {
+            c.remarks = [];
+        }
 
-        c.remarksHistory=
-          c.remarks
-            ?[c.remarks]
-            :[];
+        if (typeof c.called !== 'boolean') {
+            c.called = false;
+        }
 
-      }
+        if (typeof c.calledAt !== 'string') {
+            c.calledAt = '';
+        }
 
-      c.remarks='';
-      c.draftRemark='';
-
-      if(
-        c.calledAt &&
-        /\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}/
-          .test(c.calledAt)
-      ){
-
-        const m=
-          String(c.calledAt).match(
-            /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/
-          );
-
-        c.calledAt=
-          String(m[1]).padStart(2,'0')+
-          '/' +
-          String(m[2]).padStart(2,'0')+
-          '/' +
-          m[3];
-
-      }
-
+        /*
+         * Convert old "Called At" values to DD/MM/YYYY
+         * when possible.
+         */
+        if (c.calledAt) {
+            c.calledAt = normalizeDate(c.calledAt);
+        }
     });
-
-    headers=x.headers||[];
-    years=x.years||[];
-
-  }catch(e){}
-
 }
 
+function normalizeDate(value) {
+    if (!value) return '';
 
-/* =========================
-   HELPERS
-   ========================= */
+    const text = String(value).trim();
 
-function esc(s){
-
-  return String(s??'').replace(
-    /[&<>"']/g,
-    m=>({
-      '&':'&amp;',
-      '<':'&lt;',
-      '>':'&gt;',
-      '"':'&quot;',
-      "'":'&#39;'
-    }[m])
-  );
-
-}
-
-function isYear(h){
-
-  return /^(19|20)\d{2}$/.test(
-    String(h).trim()
-  );
-
-}
-
-function unpaid(c){
-
-  return years.filter(
-    y=>String(c.data[y]??'').trim()===''
-  );
-
-}
-
-
-/* =========================
-   REMARKS
-   ========================= */
-
-function setRemark(i,v){
-
-  const c=contacts[i];
-
-  if(!c)return;
-
-  c.draftRemark=v;
-
-}
-
-function saveRemark(i){
-
-  const el=
-    document.querySelector(
-      '[data-remark="'+i+'"]'
-    );
-
-  if(!el)return;
-
-  const text=
-    el.value.trim();
-
-  if(!text)return;
-
-  const c=contacts[i];
-
-  c.remarksHistory=
-    Array.isArray(c.remarksHistory)
-      ?c.remarksHistory
-      :((c.remarks||'')
-        ?[c.remarks]
-        :[]);
-
-  c.remarksHistory.push(text);
-
-  c.remarks='';
-  c.draftRemark='';
-
-  save();
-  render();
-
-  setTimeout(()=>{
-
-    const card=
-      document.querySelector(
-        '[data-card="'+i+'"]'
-      );
-
-    if(card){
-
-      card.scrollIntoView({
-        block:'nearest'
-      });
-
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(text)) {
+        return text;
     }
 
-  },0);
+    const d = new Date(text);
 
+    if (isNaN(d.getTime())) {
+        return text;
+    }
+
+    return formatDate(d);
 }
 
+function formatDate(date) {
+    const dd = String(date.getDate()).padStart(2, '0');
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const yyyy = date.getFullYear();
 
-/* =========================
-   EDIT / DELETE REMARKS
-   ========================= */
-
-function closeRemarkModal(){
-
-  const m=$('remarkModal');
-
-  if(m){
-    m.remove();
-  }
-
+    return `${dd}/${mm}/${yyyy}`;
 }
 
-function showRemarkModal(type,i,n){
+function isYear(h) {
+    /*
+     * Supports:
+     * 2021
+     * 2022
+     * 2023
+     *
+     * and:
+     * 2021-22
+     * 2022-23
+     * 2023-24
+     */
+    return /^(19|20)\d{2}(-\d{2})?$/.test(
+        String(h).trim()
+    );
+}
 
-  const c=contacts[i];
+function isBlank(value) {
+    return value === undefined ||
+           value === null ||
+           String(value).trim() === '';
+}
 
-  if(!c)return;
+function esc(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
 
-  if(!Array.isArray(c.remarksHistory))return;
+function getYearStatus(contact, year) {
+    const value = contact.payments
+        ? contact.payments[year]
+        : '';
 
-  const oldText=c.remarksHistory[n];
+    return isBlank(value) ? 'unpaid' : 'paid';
+}
 
-  if(oldText===undefined)return;
+function getPaidYears(contact) {
+    return years.filter(y => getYearStatus(contact, y) === 'paid');
+}
 
-  closeRemarkModal();
+function getUnpaidYears(contact) {
+    return years.filter(y => getYearStatus(contact, y) === 'unpaid');
+}
 
-  const modal=document.createElement('div');
+function isFullyPaid(contact) {
+    if (!years.length) return false;
 
-  modal.id='remarkModal';
-  modal.className='remarkModal';
+    return getUnpaidYears(contact).length === 0;
+}
 
-  if(type==='edit'){
+function hasUnpaid(contact) {
+    return getUnpaidYears(contact).length > 0;
+}
 
-    modal.innerHTML=`
+function getFilteredContacts() {
+    let result = contacts;
 
-      <div class="remarkModalBox">
+    if (activeView === 'fullyPaid') {
+        result = result.filter(isFullyPaid);
+    }
 
-        <div class="remarkModalTitle">
-          Edit Remark
-        </div>
+    if (activeView === 'hasUnpaid') {
+        result = result.filter(hasUnpaid);
+    }
 
-        <textarea
-          id="editRemarkText"
-          class="remarkModalInput"
-        >${esc(oldText)}</textarea>
+    if (activeView === 'notCalled') {
+        result = result.filter(c => !c.called);
+    }
 
-        <div class="remarkModalActions">
+    if (activeView === 'called') {
+        result = result.filter(c => c.called);
+    }
 
-          <button
-            type="button"
-            class="remarkCancelBtn"
-            onclick="closeRemarkModal()"
-          >
-            Cancel
-          </button>
+    if (searchQuery) {
+        const q = searchQuery.toLowerCase();
 
-          <button
-            type="button"
-            class="remarkSaveBtn"
-            onclick="saveEditedRemark(${i},${n})"
-          >
-            Save
-          </button>
+        result = result.filter(c => {
+            const name = String(c.name || '').toLowerCase();
+            const phone = String(c.contact || '').toLowerCase();
 
-        </div>
+            const remarks = Array.isArray(c.remarks)
+                ? c.remarks.join(' ').toLowerCase()
+                : '';
 
-      </div>
+            return name.includes(q) ||
+                   phone.includes(q) ||
+                   remarks.includes(q);
+        });
+    }
 
+    return result;
+}
+
+function renderStats() {
+    const total = contacts.length;
+    const fullyPaid = contacts.filter(isFullyPaid).length;
+    const unpaid = contacts.filter(hasUnpaid).length;
+    const notCalled = contacts.filter(c => !c.called).length;
+    const called = contacts.filter(c => c.called).length;
+
+    stats.innerHTML = `
+        <button class="stat statBtn ${activeView === 'all' ? 'active' : ''}"
+                onclick="setView('all')"
+                type="button">
+            <b>${total}</b>
+            <span>TOTAL</span>
+        </button>
+
+        <button class="stat statBtn ok ${activeView === 'fullyPaid' ? 'active' : ''}"
+                onclick="setView('fullyPaid')"
+                type="button">
+            <b>${fullyPaid}</b>
+            <span>FULLY PAID</span>
+        </button>
+
+        <button class="stat statBtn bad ${activeView === 'hasUnpaid' ? 'active' : ''}"
+                onclick="setView('hasUnpaid')"
+                type="button">
+            <b>${unpaid}</b>
+            <span>HAS UNPAID</span>
+        </button>
+
+        <button class="stat statBtn ${activeView === 'notCalled' ? 'active' : ''}"
+                onclick="setView('notCalled')"
+                type="button">
+            <b>${notCalled}</b>
+            <span>NOT CALLED</span>
+        </button>
+
+        <button class="stat statBtn ${activeView === 'called' ? 'active' : ''}"
+                onclick="setView('called')"
+                type="button">
+            <b>${called}</b>
+            <span>TOTAL CALLED</span>
+        </button>
+    `;
+}
+
+function setView(view) {
+    activeView = view;
+    render();
+}
+
+function render() {
+    renderStats();
+
+    const filtered = getFilteredContacts();
+
+    if (!contacts.length) {
+        summary.innerHTML = '';
+        list.innerHTML = `
+            <div class="empty">
+                No Data
+            </div>
+        `;
+        return;
+    }
+
+    if (searchQuery && !filtered.length) {
+        summary.innerHTML = '';
+        list.innerHTML = `
+            <div class="empty">
+                No Data Match
+            </div>
+        `;
+        return;
+    }
+
+    summary.innerHTML = `
+        Showing ${filtered.length} of ${contacts.length} contacts
     `;
 
-  }else{
+    list.innerHTML = filtered
+        .map((contact) => {
+            const index = contacts.indexOf(contact);
+            return renderCard(contact, index);
+        })
+        .join('');
+}
 
-    modal.innerHTML=`
+function renderCard(c, index) {
+    const paidYears = getPaidYears(c);
+    const unpaidYears = getUnpaidYears(c);
 
-      <div class="remarkModalBox">
+    const fullyPaid = years.length > 0 &&
+                      unpaidYears.length === 0;
 
-        <div class="remarkModalTitle">
-          Delete Remark
+    const statusText = fullyPaid
+        ? 'PAID'
+        : `NOT PAID – ${unpaidYears.join(', ')}`;
+
+    const statusClass = fullyPaid
+        ? 'paid'
+        : 'unpaid';
+
+    let yearsHtml = '';
+
+    if (years.length) {
+        yearsHtml = `
+            <div class="yearsTitle">
+                PAYMENT STATUS
+            </div>
+
+            <div class="years">
+                ${years.map(year => {
+                    const paid =
+                        getYearStatus(c, year) === 'paid';
+
+                    return `
+                        <span class="year ${paid ? 'yearPaid' : 'yearUnpaid'}">
+                            ${esc(year)}
+                        </span>
+                    `;
+                }).join('')}
+            </div>
+
+            <div class="yearSummary">
+                ${
+                    paidYears.length
+                    ? `<div class="paidText">
+                         Paid: ${paidYears.map(esc).join(', ')}
+                       </div>`
+                    : ''
+                }
+
+                ${
+                    unpaidYears.length
+                    ? `<div class="unpaidText">
+                         Not Paid: ${unpaidYears.map(esc).join(', ')}
+                       </div>`
+                    : ''
+                }
+            </div>
+        `;
+    }
+
+    let savedRemarksHtml = '';
+
+    if (Array.isArray(c.remarks) && c.remarks.length) {
+        savedRemarksHtml = `
+            <div class="savedRemarks">
+                <div class="savedRemarksTitle">
+                    Saved Remarks
+                </div>
+
+                ${c.remarks.map((remark, n) => `
+                    <div class="savedRemarkItem">
+                        <span class="savedRemarkText">
+                            <b>${n + 1}.</b> ${esc(remark)}
+                        </span>
+
+                        <div class="remarkActions">
+                            <button
+                                class="remarkEditBtn"
+                                onclick="editRemark(${index},${n})"
+                                type="button">
+                                Edit
+                            </button>
+
+                            <button
+                                class="remarkDeleteBtn"
+                                onclick="deleteRemark(${index},${n})"
+                                type="button">
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    const calledClass = c.called ? 'called' : '';
+
+    return `
+        <article class="card ${calledClass}">
+            <div class="top">
+                <div>
+                    <div class="name">
+                        ${esc(c.name)}
+                    </div>
+
+                    <div class="phone">
+                        ${esc(c.contact)}
+                    </div>
+                </div>
+            </div>
+
+            <div class="status ${statusClass}">
+                ${esc(statusText)}
+            </div>
+
+            ${yearsHtml}
+
+            ${savedRemarksHtml}
+
+            <label class="remarksLabel">
+                Add Remark
+            </label>
+
+            <textarea
+                class="remarks"
+                id="remark_${index}"
+                placeholder="Write a remark..."></textarea>
+
+            <button
+                class="saveRemark"
+                onclick="saveRemark(${index})"
+                type="button">
+                Save Remark
+            </button>
+
+            ${
+                c.calledAt
+                ? `<div class="calledAt">
+                     Called: ${esc(c.calledAt)}
+                   </div>`
+                : ''
+            }
+
+            <div class="actions">
+                <button
+                    class="call"
+                    onclick="callContact(${index})"
+                    type="button">
+                    CALL
+                </button>
+
+                <button
+                    onclick="markCalled(${index})"
+                    type="button">
+                    ${c.called ? 'CALLED' : 'NOT CALLED'}
+                </button>
+            </div>
+        </article>
+    `;
+}
+
+function saveRemark(index) {
+    const input = document.getElementById(`remark_${index}`);
+
+    if (!input) return;
+
+    const text = input.value.trim();
+
+    if (!text) {
+        showMessage('Please enter a remark.');
+        return;
+    }
+
+    if (!Array.isArray(contacts[index].remarks)) {
+        contacts[index].remarks = [];
+    }
+
+    contacts[index].remarks.push(text);
+
+    saveData();
+    render();
+
+    showMessage('Remark saved.');
+}
+
+function showRemarkModal(title, html) {
+    const old = document.getElementById('remarkModal');
+
+    if (old) {
+        old.remove();
+    }
+
+    document.body.insertAdjacentHTML(
+        'beforeend',
+        `
+        <div
+            id="remarkModal"
+            class="remarkModal"
+            onclick="if(event.target===this) closeRemarkModal()">
+
+            <div class="remarkModalBox">
+                <div class="remarkModalTitle">
+                    ${title}
+                </div>
+
+                ${html}
+            </div>
         </div>
+        `
+    );
+}
 
+function closeRemarkModal() {
+    const modal = document.getElementById('remarkModal');
+
+    if (modal) {
+        modal.remove();
+    }
+}
+
+function editRemark(index, remarkIndex) {
+    const contact = contacts[index];
+
+    if (!contact ||
+        !Array.isArray(contact.remarks) ||
+        !contact.remarks[remarkIndex]) {
+        return;
+    }
+
+    const current = contact.remarks[remarkIndex];
+
+    showRemarkModal(
+        'Edit Remark',
+        `
+        <textarea
+            id="remarkModalInput"
+            class="remarkModalInput"
+            autofocus>${esc(current)}</textarea>
+
+        <div class="remarkModalActions">
+            <button
+                class="remarkCancelBtn"
+                onclick="closeRemarkModal()"
+                type="button">
+                Cancel
+            </button>
+
+            <button
+                class="remarkSaveBtn"
+                onclick="saveEditedRemark(${index},${remarkIndex})"
+                type="button">
+                Save
+            </button>
+        </div>
+        `
+    );
+
+    setTimeout(() => {
+        const input =
+            document.getElementById('remarkModalInput');
+
+        if (input) {
+            input.focus();
+            input.setSelectionRange(
+                input.value.length,
+                input.value.length
+            );
+        }
+    }, 50);
+}
+
+function saveEditedRemark(index, remarkIndex) {
+    const input =
+        document.getElementById('remarkModalInput');
+
+    if (!input) return;
+
+    const text = input.value.trim();
+
+    if (!text) {
+        showMessage('Remark cannot be empty.');
+        return;
+    }
+
+    if (!contacts[index] ||
+        !Array.isArray(contacts[index].remarks)) {
+        return;
+    }
+
+    contacts[index].remarks[remarkIndex] = text;
+
+    saveData();
+    closeRemarkModal();
+    render();
+
+    showMessage('Remark updated.');
+}
+
+function deleteRemark(index, remarkIndex) {
+    const contact = contacts[index];
+
+    if (!contact ||
+        !Array.isArray(contact.remarks) ||
+        !contact.remarks[remarkIndex]) {
+        return;
+    }
+
+    const remark = contact.remarks[remarkIndex];
+
+    showRemarkModal(
+        'Delete Remark',
+        `
         <div class="remarkDeleteText">
-          Delete this remark?
+            Delete this remark?
         </div>
 
         <div class="remarkDeletePreview">
-          ${esc(oldText)}
+            ${esc(remark)}
         </div>
 
         <div class="remarkModalActions">
+            <button
+                class="remarkCancelBtn"
+                onclick="closeRemarkModal()"
+                type="button">
+                Cancel
+            </button>
 
-          <button
-            type="button"
-            class="remarkCancelBtn"
-            onclick="closeRemarkModal()"
-          >
-            Cancel
-          </button>
-
-          <button
-            type="button"
-            class="remarkDeleteConfirmBtn"
-            onclick="confirmDeleteRemark(${i},${n})"
-          >
-            Delete
-          </button>
-
+            <button
+                class="remarkDeleteConfirmBtn"
+                onclick="confirmDeleteRemark(${index},${remarkIndex})"
+                type="button">
+                Delete
+            </button>
         </div>
+        `
+    );
+}
 
-      </div>
-
-    `;
-
-  }
-
-  document.body.appendChild(modal);
-
-  if(type==='edit'){
-
-    const input=$('editRemarkText');
-
-    if(input){
-
-      input.focus();
-
-      input.setSelectionRange(
-        input.value.length,
-        input.value.length
-      );
-
+function confirmDeleteRemark(index, remarkIndex) {
+    if (!contacts[index] ||
+        !Array.isArray(contacts[index].remarks)) {
+        return;
     }
 
-  }
+    contacts[index].remarks.splice(remarkIndex, 1);
 
-}
-
-function editRemark(i,n){
-
-  showRemarkModal(
-    'edit',
-    i,
-    n
-  );
-
-}
-
-function saveEditedRemark(i,n){
-
-  const c=contacts[i];
-
-  if(!c)return;
-
-  if(!Array.isArray(c.remarksHistory))return;
-
-  const input=$('editRemarkText');
-
-  if(!input)return;
-
-  const text=input.value.trim();
-
-  if(!text)return;
-
-  if(c.remarksHistory[n]===undefined)return;
-
-  c.remarksHistory[n]=text;
-
-  save();
-
-  closeRemarkModal();
-
-  render();
-
-}
-
-function deleteRemark(i,n){
-
-  showRemarkModal(
-    'delete',
-    i,
-    n
-  );
-
-}
-
-function confirmDeleteRemark(i,n){
-
-  const c=contacts[i];
-
-  if(!c)return;
-
-  if(!Array.isArray(c.remarksHistory))return;
-
-  if(c.remarksHistory[n]===undefined)return;
-
-  c.remarksHistory.splice(
-    n,
-    1
-  );
-
-  save();
-
-  closeRemarkModal();
-
-  render();
-
-}
-
-
-/* =========================
-   DASHBOARD
-   ========================= */
-
-function stats(){
-
-  const total=
-    contacts.length;
-
-  const full=
-    contacts.filter(
-      c=>unpaid(c).length===0
-    ).length;
-
-  const notCalled=
-    contacts.filter(
-      c=>!c.called
-    ).length;
-
-  const called=
-    total-notCalled;
-
-  $('stats').innerHTML=
-
-    `<button
-      class="stat statBtn ${activeView==='total'?'active':''}"
-      onclick="setView('total')"
-    >
-      <b>${total}</b>
-      <span>Total</span>
-    </button>
-
-    <div class="stat ok">
-      <b>${full}</b>
-      <span>Fully Paid</span>
-    </div>
-
-    <div class="stat bad">
-      <b>${total-full}</b>
-      <span>Has Unpaid</span>
-    </div>
-
-    <button
-      class="stat statBtn ${activeView==='notCalled'?'active':''}"
-      onclick="setView('notCalled')"
-    >
-      <b>${notCalled}</b>
-      <span>Not Called</span>
-    </button>
-
-    <button
-      class="stat statBtn ${activeView==='called'?'active':''}"
-      onclick="setView('called')"
-    >
-      <b>${called}</b>
-      <span>Total Called</span>
-    </button>`;
-
-}
-
-function setView(v){
-
-  activeView=v;
-
-  render();
-
-}
-
-
-/* =========================
-   GO TO TOP
-   ========================= */
-
-function goTop(){
-
-  window.scrollTo({
-    top:0,
-    behavior:'smooth'
-  });
-
-  document.documentElement.scrollTop=0;
-  document.body.scrollTop=0;
-
-}
-
-function updateTopButton(){
-
-  const b=$('topBtn');
-
-  if(!b)return;
-
-  const y=Math.max(
-    window.scrollY||0,
-    document.documentElement.scrollTop||0,
-    document.body.scrollTop||0
-  );
-
-  b.classList.toggle(
-    'show',
-    y>250
-  );
-
-}
-
-window.addEventListener(
-  'scroll',
-  updateTopButton,
-  {
-    passive:true,
-    capture:true
-  }
-);
-
-document.addEventListener(
-  'scroll',
-  updateTopButton,
-  {
-    passive:true,
-    capture:true
-  }
-);
-
-window.addEventListener(
-  'touchmove',
-  updateTopButton,
-  {
-    passive:true
-  }
-);
-
-window.addEventListener(
-  'resize',
-  updateTopButton
-);
-
-setInterval(
-  updateTopButton,
-  500
-);
-
-
-/* =========================
-   RENDER CONTACTS
-   ========================= */
-
-function render(){
-
-  const q=searchQuery;
-
-  let arr=
-    contacts.filter(c=>
-
-      (
-        activeView==='total' ||
-
-        (
-          activeView==='notCalled' &&
-          !c.called
-        ) ||
-
-        (
-          activeView==='called' &&
-          c.called
-        )
-      )
-
-      &&
-
-      (
-        !q ||
-
-        c.name
-          .toLowerCase()
-          .includes(q)
-
-        ||
-
-        c.phone
-          .toLowerCase()
-          .includes(q)
-
-        ||
-
-        String(c.remarks||'')
-          .toLowerCase()
-          .includes(q)
-
-        ||
-
-        (
-          (c.remarksHistory||[])
-            .join(' ')
-        )
-        .toLowerCase()
-        .includes(q)
-      )
-
-    );
-
-
-  stats();
-
-
-  $('summary').textContent=
-    `${arr.length} shown • ${contacts.length} total`;
-
-
-  if(!arr.length){
-
-    $('list').innerHTML=
-      '<div class="empty">'+
-      'No contacts found.<br>'+
-      'Import an Excel file to begin.'+
-      '</div>';
-
-    return;
-
-  }
-
-
-  $('list').innerHTML=
-
-    arr.map(c=>{
-
-      const u=
-        unpaid(c);
-
-      const p=
-        u.length===0;
-
-      const i=
-        contacts.indexOf(c);
-
-      const paidYears=
-        years.filter(
-          y=>!u.includes(y)
-        );
-
-      const history=
-        Array.isArray(c.remarksHistory)
-          ?c.remarksHistory
-          :((c.remarks||'')
-            ?[c.remarks]
-            :[]);
-
-
-      return `
-
-      <article
-        class="card ${c.called?'called':''}"
-        data-card="${i}"
-      >
-
-        <div class="top">
-
-          <div>
-
-            <div class="name">
-              ${esc(c.name||'Unnamed')}
-            </div>
-
-            <div class="phone">
-              ${esc(c.phone)}
-            </div>
-
-          </div>
-
-          <div class="status ${p?'paid':'unpaid'}">
-            ${p?'FULLY PAID':'HAS UNPAID'}
-          </div>
-
-        </div>
-
-
-        <div class="yearsTitle">
-          Payment by Year
-        </div>
-
-
-        <div class="years">
-
-          ${years.map(y=>{
-
-            const ok=
-              !u.includes(y);
-
-            return `
-
-            <span
-              class="year ${ok?'yearPaid':'yearUnpaid'}"
-            >
-
-              <b>${esc(y)}</b>:
-              ${ok?'PAID':'NOT PAID'}
-
-            </span>
-
-            `;
-
-          }).join('')}
-
-        </div>
-
-
-        <div class="yearSummary">
-
-          <span class="paidText">
-
-            <b>Paid years:</b>
-
-            ${
-              paidYears.length
-                ?paidYears.join(', ')
-                :'None'
-            }
-
-          </span>
-
-
-          <span class="unpaidText">
-
-            <b>Unpaid years:</b>
-
-            ${
-              u.length
-                ?u.join(', ')
-                :'None'
-            }
-
-          </span>
-
-        </div>
-
-
-        ${
-          history.length
-
-          ?
-
-          `
-
-          <div class="savedRemarks">
-
-            <div class="savedRemarksTitle">
-              Saved Remarks
-            </div>
-
-
-            ${history.map((r,n)=>`
-
-              <div class="savedRemarkItem">
-
-                <span class="savedRemarkText">
-                  <b>${n+1}.</b> ${esc(r)}
-                </span>
-
-                <div class="remarkActions">
-
-                  <button
-                    class="remarkEditBtn"
-                    onclick="editRemark(${i},${n})"
-                    type="button"
-                  >
-                    Edit
-                  </button>
-
-                  <button
-                    class="remarkDeleteBtn"
-                    onclick="deleteRemark(${i},${n})"
-                    type="button"
-                  >
-                    Delete
-                  </button>
-
-                </div>
-
-              </div>
-
-            `).join('')}
-
-          </div>
-
-          `
-
-          :
-
-          ''
-        }
-
-
-        <label class="remarksLabel">
-          Add New Remark
-        </label>
-
-
-        <textarea
-          class="remarks"
-          data-remark="${i}"
-          placeholder="Type a new remark after calling..."
-          oninput="setRemark(${i},this.value)"
-        ></textarea>
-
-
-        <button
-          class="saveRemark"
-          data-save-remark="${i}"
-          onclick="saveRemark(${i})"
-        >
-          SAVE REMARK
-        </button>
-
-
-        <div class="actions">
-
-          <button
-            class="call"
-            onclick="callNumber('${esc(c.phone)}')"
-          >
-            📞 CALL
-          </button>
-
-
-          <button
-            onclick="toggleCalled('${encodeURIComponent(c.phone)}')"
-          >
-            ${
-              c.called
-                ?'✓ CALLED'
-                :'Mark Called'
-            }
-          </button>
-
-        </div>
-
-
-        ${
-          c.calledAt
-
-          ?
-
-          `
-
-          <div class="calledAt">
-            Called: ${esc(c.calledAt)}
-          </div>
-
-          `
-
-          :
-
-          ''
-        }
-
-
-      </article>
-
-      `;
-
-    }).join('');
-
-}
-
-
-/* =========================
-   CALL
-   ========================= */
-
-function callNumber(p){
-
-  location.href=
-    'tel:'+
-    String(p).replace(
-      /[^\d+]/g,
-      ''
-    );
-
-}
-
-
-/* =========================
-   DATE
-   ========================= */
-
-function formatDate(d){
-
-  const dd=
-    String(
-      d.getDate()
-    ).padStart(2,'0');
-
-  const mm=
-    String(
-      d.getMonth()+1
-    ).padStart(2,'0');
-
-  const yyyy=
-    d.getFullYear();
-
-  return(
-    dd+'/'+mm+'/'+yyyy
-  );
-
-}
-
-
-/* =========================
-   MARK CALLED
-   ========================= */
-
-function toggleCalled(ep){
-
-  const p=
-    decodeURIComponent(ep);
-
-  const c=
-    contacts.find(
-      x=>x.phone===p
-    );
-
-  if(c){
-
-    c.called=
-      !c.called;
-
-    c.calledAt=
-      c.called
-        ?formatDate(new Date())
-        :'';
-
-    save();
-
+    saveData();
+    closeRemarkModal();
     render();
 
-  }
-
+    showMessage('Remark deleted.');
 }
 
+function callContact(index) {
+    const contact = contacts[index];
 
-/* =========================
-   SEARCH
-   ========================= */
+    if (!contact) return;
 
-function updateSearchButton(){
+    const phone = String(contact.contact || '').trim();
 
-  const btn=
-    $('searchBtn');
-
-  const input=
-    $('search');
-
-  if(btn&&input){
-
-    btn.disabled=
-      input.value.trim()==='';
-
-  }
-
-}
-
-
-function runSearch(){
-
-  const raw=
-    $('search').value.trim();
-
-
-  /* Empty search does nothing */
-
-  if(!raw){
-
-    return;
-
-  }
-
-
-  const digits=
-    raw.replace(/\D/g,'');
-
-
-  /*
-    Numeric search must be
-    complete 10-digit number.
-  */
-
-  if(
-    /^\d+$/.test(raw) &&
-    digits.length!==10
-  ){
-
-    msg(
-      'Enter the complete 10-digit contact number, then press SEARCH.'
-    );
-
-    return;
-
-  }
-
-
-  searchQuery=
-    raw.toLowerCase();
-
-
-  render();
-
-
-  const found=
-    contacts.some(c=>
-
-      c.name
-        .toLowerCase()
-        .includes(searchQuery)
-
-      ||
-
-      c.phone
-        .toLowerCase()
-        .includes(searchQuery)
-
-      ||
-
-      String(c.remarks||'')
-        .toLowerCase()
-        .includes(searchQuery)
-
-      ||
-
-      (
-        (c.remarksHistory||[])
-          .join(' ')
-      )
-      .toLowerCase()
-      .includes(searchQuery)
-
-    );
-
-
-  if(!found){
-
-    msg(
-      'No Data Match'
-    );
-
-  }else{
-
-    msg('');
-
-  }
-
-}
-
-
-/* =========================
-   XLSX IMPORT - ZIP READER
-   ========================= */
-
-async function readZip(buf){
-
-  const b=
-    new Uint8Array(buf);
-
-  const dv=
-    new DataView(buf);
-
-  let eocd=-1;
-
-
-  for(
-    let i=b.length-22;
-    i>=Math.max(
-      0,
-      b.length-65557
-    );
-    i--
-  ){
-
-    if(
-      dv.getUint32(i,true)===
-      0x06054b50
-    ){
-
-      eocd=i;
-
-      break;
-
+    if (!phone) {
+        showMessage('No contact number available.');
+        return;
     }
 
-  }
+    /*
+     * MainActivity handles tel: and opens
+     * the Android dialer.
+     */
+    window.location.href =
+        `tel:${encodeURIComponent(phone)}`;
+}
 
+function markCalled(index) {
+    const contact = contacts[index];
 
-  if(eocd<0){
+    if (!contact) return;
 
-    throw Error(
-      'Invalid XLSX/ZIP file'
-    );
+    contact.called = true;
+    contact.calledAt = formatDate(new Date());
 
-  }
+    saveData();
+    render();
 
+    showMessage('Marked as called.');
+}
 
-  const cdSize=
-    dv.getUint32(
-      eocd+12,
-      true
-    );
+function showMessage(text) {
+    if (!message) return;
 
-  const cdOff=
-    dv.getUint32(
-      eocd+16,
-      true
-    );
+    message.textContent = text;
+    message.classList.add('show');
 
+    clearTimeout(showMessage.timer);
 
-  let p=cdOff;
+    showMessage.timer = setTimeout(() => {
+        message.classList.remove('show');
+    }, 2500);
+}
 
-  let files={};
+function updateSearchButton() {
+    const value = searchInput.value.trim();
 
+    searchBtn.disabled = value.length === 0;
+}
 
-  while(
-    p<cdOff+cdSize
-  ){
+function performSearch() {
+    const value = searchInput.value.trim();
 
-    if(
-      dv.getUint32(p,true)!==
-      0x02014b50
-    ){
-
-      break;
-
+    if (!value) {
+        searchQuery = '';
+        activeView = 'all';
+        render();
+        return;
     }
 
-
-    const method=
-      dv.getUint16(
-        p+10,
-        true
-      );
-
-    const cs=
-      dv.getUint32(
-        p+20,
-        true
-      );
-
-    const us=
-      dv.getUint32(
-        p+24,
-        true
-      );
-
-    const nl=
-      dv.getUint16(
-        p+28,
-        true
-      );
-
-    const el=
-      dv.getUint16(
-        p+30,
-        true
-      );
-
-    const cl=
-      dv.getUint16(
-        p+32,
-        true
-      );
-
-    const off=
-      dv.getUint32(
-        p+42,
-        true
-      );
-
-
-    const name=
-      new TextDecoder()
-        .decode(
-          b.slice(
-            p+46,
-            p+46+nl
-          )
+    /*
+     * Numeric-only searches require the complete
+     * 10-digit contact number.
+     */
+    if (/^\d+$/.test(value) && value.length !== 10) {
+        showMessage(
+            'Enter the complete 10-digit contact number.'
         );
-
-
-    files[name]={
-      method,
-      cs,
-      us,
-      off
-    };
-
-
-    p+=
-      46+
-      nl+
-      el+
-      cl;
-
-  }
-
-
-  async function get(name){
-
-    const f=
-      files[name];
-
-    if(!f){
-
-      throw Error(
-        'Missing '+name
-      );
-
+        return;
     }
 
+    searchQuery = value;
+    render();
+}
 
-    const q=
-      f.off;
+searchInput.addEventListener('input', () => {
+    updateSearchButton();
 
-    const n=
-      dv.getUint16(
-        q+26,
-        true
-      );
-
-    const m=
-      dv.getUint16(
-        q+28,
-        true
-      );
-
-
-    const start=
-      q+30+n+m;
-
-
-    const raw=
-      b.slice(
-        start,
-        start+f.cs
-      );
-
-
-    if(f.method===0){
-
-      return raw;
-
+    /*
+     * Clearing the search immediately restores
+     * all contacts.
+     */
+    if (!searchInput.value.trim()) {
+        searchQuery = '';
+        activeView = 'all';
+        render();
     }
+});
 
+searchBtn.addEventListener('click', performSearch);
 
-    if(f.method===8){
-
-      const ds=
-        new DecompressionStream(
-          'deflate-raw'
-        );
-
-
-      return new Uint8Array(
-
-        await new Response(
-
-          new Blob([raw])
-            .stream()
-            .pipeThrough(ds)
-
-        ).arrayBuffer()
-
-      );
-
+searchInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        performSearch();
     }
+});
 
+importBtn.addEventListener('click', () => {
+    fileInput.click();
+});
 
-    throw Error(
-      'Unsupported compression'
-    );
+fileInput.addEventListener('change', async () => {
+    const file = fileInput.files[0];
 
-  }
+    if (!file) return;
 
+    try {
+        const buffer = await file.arrayBuffer();
 
-  return{
-    files,
-    get
-  };
-
-}
-
-
-/* =========================
-   XML
-   ========================= */
-
-function xmlDoc(bytes){
-
-  return new DOMParser()
-    .parseFromString(
-      new TextDecoder()
-        .decode(bytes),
-      'application/xml'
-    );
-
-}
-
-function els(root,name){
-
-  return Array.from(
-    root.getElementsByTagNameNS(
-      '*',
-      name
-    )
-  );
-
-}
-
-function firstEl(root,name){
-
-  return(
-    els(root,name)[0]||null
-  );
-
-}
-
-
-/* =========================
-   XLSX PARSER
-   ========================= */
-
-async function parseXlsx(buf){
-
-  const z=
-    await readZip(buf);
-
-  const shared=[];
-
-
-  if(
-    z.files['xl/sharedStrings.xml']
-  ){
-
-    const d=
-      xmlDoc(
-        await z.get(
-          'xl/sharedStrings.xml'
-        )
-      );
-
-
-    els(d,'si')
-      .forEach(si=>{
-
-        shared.push(
-
-          els(si,'t')
-            .map(
-              x=>x.textContent
-            )
-            .join('')
-
-        );
-
-      });
-
-  }
-
-
-  let sheet=
-    'xl/worksheets/sheet1.xml';
-
-
-  if(!z.files[sheet]){
-
-    const names=
-      Object.keys(z.files)
-        .filter(
-          x=>
-            /^xl\/worksheets\/sheet\d+\.xml$/
-              .test(x)
-        );
-
-
-    if(!names.length){
-
-      throw Error(
-        'No worksheet found'
-      );
-
-    }
-
-
-    sheet=
-      names[0];
-
-  }
-
-
-  const d=
-    xmlDoc(
-      await z.get(sheet)
-    );
-
-
-  const rows=[];
-
-
-  els(d,'row')
-    .forEach(r=>{
-
-      const vals=[];
-
-
-      els(r,'c')
-        .forEach(c=>{
-
-          const ref=
-            c.getAttribute('r')||'';
-
-
-          const m=
-            ref.match(
-              /([A-Z]+)\d+/
-            );
-
-
-          if(!m)return;
-
-
-          let col=0;
-
-
-          for(
-            const ch of m[1]
-          ){
-
-            col=
-              col*26+
-              ch.charCodeAt(0)-64;
-
-          }
-
-
-          col--;
-
-
-          while(
-            vals.length<col
-          ){
-
-            vals.push('');
-
-          }
-
-
-          const ve=
-            firstEl(c,'v');
-
-
-          let v=
-            ve?.textContent??'';
-
-
-          if(
-            c.getAttribute('t')==='s'
-          ){
-
-            v=
-              shared[
-                Number(v)
-              ]??'';
-
-          }
-
-
-          else if(
-            c.getAttribute('t')===
-            'inlineStr'
-          ){
-
-            v=
-              els(c,'t')
-                .map(
-                  x=>x.textContent
-                )
-                .join('');
-
-          }
-
-
-          vals[col]=v;
-
+        /*
+         * XLSX must be available in app.js / HTML.
+         */
+        const workbook = XLSX.read(buffer, {
+            type: 'array'
         });
 
+        const firstSheet =
+            workbook.Sheets[workbook.SheetNames[0]];
 
-      rows.push(vals);
-
-    });
-
-
-  return rows;
-
-}
-
-
-/* =========================
-   IMPORT EXCEL
-   ========================= */
-
-async function importFile(file){
-
-  if(!file){
-
-    throw Error(
-      'Please select an Excel file.'
-    );
-
-  }
-
-
-  const rows=
-    await parseXlsx(
-      await file.arrayBuffer()
-    );
-
-
-  if(!rows.length){
-
-    throw Error(
-      'Empty worksheet'
-    );
-
-  }
-
-
-  headers=
-    rows[0].map(
-      x=>String(x).trim()
-    );
-
-
-  const lower=
-    headers.map(
-      x=>String(x).toLowerCase()
-    );
-
-
-  const ni=
-    lower.findIndex(
-      x=>
-        [
-          'name',
-          'full name',
-          'candidate name'
-        ].includes(x)
-    );
-
-
-  const pi=
-    lower.findIndex(
-      x=>
-        [
-          'contact',
-          'phone',
-          'mobile',
-          'mobile no',
-          'phone number',
-          'contact number'
-        ].includes(x)
-    );
-
-
-  if(pi<0){
-
-    throw Error(
-      'Contact/Phone/Mobile column not found'
-    );
-
-  }
-
-
-  years=
-    headers.filter(isYear);
-
-
-  if(!years.length){
-
-    throw Error(
-      'No year columns found, e.g. 2022, 2023, 2024, 2025'
-    );
-
-  }
-
-
-  contacts=
-    rows
-      .slice(1)
-      .filter(
-        r=>
-          r.some(
-            v=>
-              String(v??'').trim()!==''
-          )
-      )
-      .map(r=>{
-
-        const data={};
-
-
-        headers.forEach(
-          (h,i)=>{
-
-            data[h]=
-              String(
-                r[i]??''
-              ).trim();
-
-          }
+        const rows = XLSX.utils.sheet_to_json(
+            firstSheet,
+            {
+                defval: ''
+            }
         );
 
+        if (!rows.length) {
+            showMessage('Excel file is empty.');
+            return;
+        }
 
-        return{
+        importRows(rows);
 
-          name:
-            ni>=0
-              ?String(
-                r[ni]??''
-              ).trim()
-              :'',
-
-          phone:
-            String(
-              r[pi]??''
-            ).trim(),
-
-          data,
-
-          remarks:'',
-
-          remarksHistory:[],
-
-          draftRemark:'',
-
-          called:false,
-
-          calledAt:''
-
-        };
-
-      });
-
-
-  /* Clear any previous search after new import */
-
-  searchQuery='';
-
-
-  save();
-
-  render();
-
-  updateSearchButton();
-
-}
-
-
-/* =========================
-   MESSAGE
-   ========================= */
-
-function msg(t){
-
-  const m=
-    $('message');
-
-  if(!m)return;
-
-  m.textContent=
-    t||'';
-
-  m.classList.toggle(
-    'show',
-    !!t
-  );
-
-}
-
-
-/* =========================
-   BUTTONS
-   ========================= */
-
-$('importBtn').onclick=()=>
-  $('file').click();
-
-
-$('exportBtn').onclick=
-  exportExcel;
-
-
-/* =========================
-   FILE IMPORT BUTTON
-   ========================= */
-
-$('file').onchange=
-  async e=>{
-
-    try{
-
-      msg(
-        'Reading Excel…'
-      );
-
-
-      await importFile(
-        e.target.files[0]
-      );
-
-
-      msg(
-        `Imported ${contacts.length} contacts successfully.`
-      );
-
-
-      setTimeout(
-        ()=>msg(''),
-        2500
-      );
-
-
-    }catch(err){
-
-      console.error(err);
-
-
-      msg(
-        'Import failed: '+
-        (
-          err&&err.message
-            ?err.message
-            :String(err)
-        )
-      );
-
-
-      alert(
-        'Import failed: '+
-        (
-          err&&err.message
-            ?err.message
-            :String(err)
-        )
-      );
-
+    } catch (error) {
+        console.error(error);
+        showMessage('Could not read the Excel file.');
     }
 
+    fileInput.value = '';
+});
 
-    e.target.value='';
+function importRows(rows) {
+    const originalHeaders = Object.keys(rows[0] || {});
 
-  };
+    headers = originalHeaders.slice();
 
+    years = headers
+        .filter(isYear)
+        .map(h => String(h).trim());
 
-/* =========================
-   SEARCH INPUT
-   ========================= */
+    /*
+     * If duplicate year/session headers exist,
+     * keep only one.
+     */
+    years = [...new Set(years)];
 
-$('search').oninput=()=>{
+    contacts = rows.map(row => {
+        const nameKey = findHeader(
+            originalHeaders,
+            [
+                'Name',
+                'name',
+                'NAME'
+            ]
+        );
 
-  const value=
-    $('search').value.trim();
+        const contactKey = findHeader(
+            originalHeaders,
+            [
+                'Contact',
+                'contact',
+                'Phone',
+                'phone',
+                'Mobile',
+                'mobile',
+                'Phone Number',
+                'Mobile Number'
+            ]
+        );
 
+        const payments = {};
 
-  /*
-    Update only the button.
-    DO NOT search while typing.
-  */
+        years.forEach(year => {
+            payments[year] = row[year] ?? '';
+        });
 
-  updateSearchButton();
+        return {
+            name: nameKey
+                ? String(row[nameKey] ?? '').trim()
+                : '',
 
+            contact: contactKey
+                ? String(row[contactKey] ?? '').trim()
+                : '',
 
-  /*
-    When the search box is completely
-    cleared, remove the previous search
-    and immediately show ALL contacts.
-  */
+            payments,
 
-  if(value===''){
+            remarks: [],
 
-    searchQuery='';
+            called: false,
 
-    msg('');
+            calledAt: ''
+        };
+    });
 
+    /*
+     * Remove completely empty rows.
+     */
+    contacts = contacts.filter(c =>
+        c.name ||
+        c.contact ||
+        Object.values(c.payments).some(v => !isBlank(v))
+    );
+
+    searchQuery = '';
+    activeView = 'all';
+
+    saveData();
     render();
 
-  }
+    showMessage(
+        `${contacts.length} contacts imported successfully.`
+    );
+}
 
-};
+function findHeader(headerList, names) {
+    for (const name of names) {
+        const found = headerList.find(
+            h => String(h).trim() === name
+        );
 
-
-$('searchBtn').onclick=
-  runSearch;
-
-
-$('search').addEventListener(
-  'keydown',
-  e=>{
-
-    if(
-      e.key==='Enter' &&
-      $('search').value.trim()!==''
-    ){
-
-      runSearch();
-
+        if (found) return found;
     }
 
-  }
-);
+    return null;
+}
 
+exportBtn.addEventListener('click', () => {
+    if (!contacts.length) {
+        showMessage('No data to export.');
+        return;
+    }
 
-/* =========================
-   CLEAR ALL DATA
-   ========================= */
+    exportExcel();
+});
 
-$('clearBtn').onclick=()=>{
+function exportExcel() {
+    try {
+        const rows = contacts.map(c => {
+            const row = {};
 
-  if(
-    confirm(
-      'Delete all imported data from this phone?'
-    )
-  ){
+            row['Name'] = c.name;
+            row['Contact'] = c.contact;
+
+            years.forEach(year => {
+                row[year] =
+                    c.payments
+                        ? c.payments[year] ?? ''
+                        : '';
+            });
+
+            row['Called'] = c.called
+                ? 'Called'
+                : 'Not Called';
+
+            row['Called At'] = c.calledAt || '';
+
+            if (Array.isArray(c.remarks)) {
+                row['Remarks'] = c.remarks
+                    .map((r, i) =>
+                        `${i + 1}. ${r}`
+                    )
+                    .join('\n');
+            } else {
+                row['Remarks'] = '';
+            }
+
+            return row;
+        });
+
+        const worksheet =
+            XLSX.utils.json_to_sheet(rows);
+
+        /*
+         * Make columns reasonably wide.
+         */
+        const widths = [
+            {
+                wch: 25
+            },
+            {
+                wch: 16
+            }
+        ];
+
+        years.forEach(() => {
+            widths.push({
+                wch: 14
+            });
+        });
+
+        widths.push(
+            {
+                wch: 15
+            },
+            {
+                wch: 15
+            },
+            {
+                wch: 45
+            }
+        );
+
+        worksheet['!cols'] = widths;
+
+        const workbook =
+            XLSX.utils.book_new();
+
+        XLSX.utils.book_append_sheet(
+            workbook,
+            worksheet,
+            'Contacts'
+        );
+
+        const filename =
+            `Contact_Payment_${formatFileDate()}.xlsx`;
+
+        /*
+         * AndroidBridge handles the actual
+         * Android file save.
+         */
+        if (
+            window.AndroidBridge &&
+            typeof window.AndroidBridge.saveExcel === 'function'
+        ) {
+            const base64 =
+                workbookToBase64(workbook);
+
+            window.AndroidBridge.saveExcel(
+                base64,
+                filename
+            );
+
+            showMessage('Excel export started.');
+        } else {
+            /*
+             * Browser fallback.
+             */
+            XLSX.writeFile(
+                workbook,
+                filename
+            );
+
+            showMessage('Excel exported.');
+        }
+
+    } catch (error) {
+        console.error(error);
+        showMessage('Could not export Excel.');
+    }
+}
+
+function workbookToBase64(workbook) {
+    const output = XLSX.write(
+        workbook,
+        {
+            bookType: 'xlsx',
+            type: 'base64'
+        }
+    );
+
+    return output;
+}
+
+function formatFileDate() {
+    const d = new Date();
+
+    const yyyy = d.getFullYear();
+    const mm = String(
+        d.getMonth() + 1
+    ).padStart(2, '0');
+
+    const dd = String(
+        d.getDate()
+    ).padStart(2, '0');
+
+    return `${yyyy}-${mm}-${dd}`;
+}
+
+clearBtn.addEventListener('click', () => {
+    const ok = window.confirm(
+        'Clear all saved data from this app?'
+    );
+
+    if (!ok) return;
+
+    contacts = [];
+    headers = [];
+    years = [];
+    searchQuery = '';
+    activeView = 'all';
 
     localStorage.removeItem(KEY);
 
-    contacts=[];
-
-    headers=[];
-
-    years=[];
-
-    searchQuery='';
-
-    activeView='total';
+    searchInput.value = '';
+    updateSearchButton();
 
     render();
 
-    updateSearchButton();
+    showMessage('All data cleared.');
+});
 
-  }
+function goTop() {
+    window.scrollTo({
+        top: 0,
+        behavior: 'smooth'
+    });
+}
 
-};
+window.addEventListener('scroll', () => {
+    if (!topBtn) return;
 
+    if (window.scrollY > 350) {
+        topBtn.classList.add('show');
+    } else {
+        topBtn.classList.remove('show');
+    }
+});
 
-/* =========================
-   INITIAL LOAD
-   ========================= */
-
-load();
-
-render();
-
+loadData();
 updateSearchButton();
-
-
-if(
-  'serviceWorker' in navigator
-){
-
-  navigator.serviceWorker
-    .register('sw.js')
-    .catch(()=>{});
-
-}
-
-
-/* =========================
-   XLSX EXPORT
-   ========================= */
-
-function colName(n){
-
-  let s='';
-
-
-  while(n>0){
-
-    let r=
-      (n-1)%26;
-
-
-    s=
-      String.fromCharCode(
-        65+r
-      )+
-      s;
-
-
-    n=
-      Math.floor(
-        (n-1)/26
-      );
-
-  }
-
-
-  return s;
-
-}
-
-
-function crc32(bytes){
-
-  let c=
-    0xffffffff;
-
-
-  for(
-    const b of bytes
-  ){
-
-    c^=b;
-
-
-    for(
-      let k=0;
-      k<8;
-      k++
-    ){
-
-      c=
-        (c>>>1)^
-        (
-          (c&1)
-            ?0xedb88320
-            :0
-        );
-
-    }
-
-  }
-
-
-  return(
-    c^0xffffffff
-  )>>>0;
-
-}
-
-
-function u16(v){
-
-  return new Uint8Array([
-
-    v&255,
-
-    (v>>>8)&255
-
-  ]);
-
-}
-
-
-function u32(v){
-
-  return new Uint8Array([
-
-    v&255,
-
-    (v>>>8)&255,
-
-    (v>>>16)&255,
-
-    (v>>>24)&255
-
-  ]);
-
-}
-
-
-function joinBytes(a){
-
-  let n=
-    a.reduce(
-      (s,x)=>s+x.length,
-      0
-    );
-
-
-  let o=
-    new Uint8Array(n);
-
-
-  let p=0;
-
-
-  for(
-    const x of a
-  ){
-
-    o.set(
-      x,
-      p
-    );
-
-
-    p+=x.length;
-
-  }
-
-
-  return o;
-
-}
-
-
-function zipStored(entries){
-
-  const enc=
-    new TextEncoder();
-
-
-  const lo=[];
-
-  const ce=[];
-
-  let off=0;
-
-
-  for(
-    const e of entries
-  ){
-
-    const name=
-      enc.encode(
-        e.name
-      );
-
-
-    const data=
-      typeof e.data==='string'
-        ?enc.encode(e.data)
-        :e.data;
-
-
-    const crc=
-      crc32(data);
-
-
-    const h=
-      joinBytes([
-
-        u32(0x04034b50),
-
-        u16(20),
-
-        u16(0),
-
-        u16(0),
-
-        u16(0),
-
-        u16(0),
-
-        u32(crc),
-
-        u32(data.length),
-
-        u32(data.length),
-
-        u16(name.length),
-
-        u16(0),
-
-        name
-
-      ]);
-
-
-    lo.push(
-      h,
-      data
-    );
-
-
-    const ch=
-      joinBytes([
-
-        u32(0x02014b50),
-
-        u16(20),
-
-        u16(20),
-
-        u16(0),
-
-        u16(0),
-
-        u16(0),
-
-        u16(0),
-
-        u32(crc),
-
-        u32(data.length),
-
-        u32(data.length),
-
-        u16(name.length),
-
-        u16(0),
-
-        u16(0),
-
-        u16(0),
-
-        u16(0),
-
-        u32(0),
-
-        u32(off),
-
-        name
-
-      ]);
-
-
-    ce.push(ch);
-
-
-    off+=
-      h.length+
-      data.length;
-
-  }
-
-
-  const l=
-    joinBytes(lo);
-
-
-  const c=
-    joinBytes(ce);
-
-
-  const e=
-    joinBytes([
-
-      u32(0x06054b50),
-
-      u16(0),
-
-      u16(0),
-
-      u16(entries.length),
-
-      u16(entries.length),
-
-      u32(c.length),
-
-      u32(l.length),
-
-      u16(0)
-
-    ]);
-
-
-  return new Blob(
-    [l,c,e],
-    {
-      type:
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    }
-  );
-
-}
-
-
-function makeSheet(){
-
-  const hs=[
-
-    ...headers.filter(
-      h=>
-        ![
-          'Remarks',
-          'Called',
-          'Called At'
-        ].includes(h)
-    ),
-
-    'Remarks',
-    'Called',
-    'Called At'
-
-  ];
-
-
-  const rows=[
-
-    hs,
-
-    ...contacts.map(c=>[
-
-      ...headers
-        .filter(
-          h=>
-            ![
-              'Remarks',
-              'Called',
-              'Called At'
-            ].includes(h)
-        )
-        .map(
-          h=>c.data[h]??''
-        ),
-
-
-      (
-        Array.isArray(
-          c.remarksHistory
-        )
-
-        ?
-
-        c.remarksHistory
-          .map(
-            (r,n)=>
-              (n+1)+'. '+r
-          )
-          .join('\n')
-
-        :
-
-        c.remarks||''
-      ),
-
-
-      c.called
-        ?'YES'
-        :'NO',
-
-
-      c.calledAt||''
-
-    ])
-
-  ];
-
-
-  let x=
-    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
-    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'+
-    '<sheetData>';
-
-
-  rows.forEach(
-    (r,ri)=>{
-
-      x+=
-        `<row r="${ri+1}">`;
-
-
-      r.forEach(
-        (v,ci)=>{
-
-          x+=
-            `<c r="${colName(ci+1)}${ri+1}" t="inlineStr"><is><t>${esc(v)}</t></is></c>`;
-
-        }
-      );
-
-
-      x+='</row>';
-
-    }
-  );
-
-
-  return(
-    x+
-    '</sheetData></worksheet>'
-  );
-
-}
-
-
-function exportExcel(){
-
-  if(!contacts.length){
-
-    alert(
-      'No data to export.'
-    );
-
-    return;
-
-  }
-
-
-  const entries=[
-
-    {
-
-      name:
-        '[Content_Types].xml',
-
-      data:
-        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
-        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'+
-        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'+
-        '<Default Extension="xml" ContentType="application/xml"/>'+
-        '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'+
-        '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'+
-        '</Types>'
-
-    },
-
-
-    {
-
-      name:
-        '_rels/.rels',
-
-      data:
-        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
-        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+
-        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'+
-        '</Relationships>'
-
-    },
-
-
-    {
-
-      name:
-        'xl/workbook.xml',
-
-      data:
-        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
-        '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'+
-        '<sheets>'+
-        '<sheet name="Payments" sheetId="1" r:id="rId1"/>'+
-        '</sheets>'+
-        '</workbook>'
-
-    },
-
-
-    {
-
-      name:
-        'xl/_rels/workbook.xml.rels',
-
-      data:
-        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
-        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+
-        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'+
-        '</Relationships>'
-
-    },
-
-
-    {
-
-      name:
-        'xl/worksheets/sheet1.xml',
-
-      data:
-        makeSheet()
-
-    }
-
-  ];
-
-
-  const blob=
-    zipStored(entries);
-
-
-  if(
-    window.AndroidBridge &&
-    AndroidBridge.saveXlsx
-  ){
-
-    const fr=
-      new FileReader();
-
-
-    fr.onload=()=>{
-
-      AndroidBridge.saveXlsx(
-
-        String(fr.result)
-          .split(',')[1],
-
-        'Contact_Payment_Updated.xlsx'
-
-      );
-
-    };
-
-
-    fr.readAsDataURL(blob);
-
-  }
-
-
-  else{
-
-    const a=
-      document.createElement('a');
-
-
-    a.href=
-      URL.createObjectURL(blob);
-
-
-    a.download=
-      'Contact_Payment_Updated.xlsx';
-
-
-    a.click();
-
-
-    setTimeout(
-      ()=>URL.revokeObjectURL(a.href),
-      1000
-    );
-
-  }
-
-}
+render();
